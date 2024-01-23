@@ -20,8 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//!PARAM cfl_antiring
-//!DESC [CfL_Prediction_Polar] Antiring Parameter
+//!PARAM AR
 //!TYPE float
 //!MINIMUM 0.0
 //!MAXIMUM 1.0
@@ -34,31 +33,37 @@
 //!WIDTH CHROMA.w
 //!HEIGHT CHROMA.h
 //!WHEN CHROMA.w LUMA.w <
-//!DESC [CfL_Prediction_Polar] Downscaling Hermite
+//!DESC [CfL_Prediction_Polar_nxt] Downscaling Hermite
 
 #define weight hermite
 
 float box(const vec2 d)      { return float(length(d) <= 0.5); }
-float triangle(const vec2 d) { return max(1.0 - 2.0 * length(d), 0.0); }
+float triangle(const vec2 d) { return max(1.0 - length(d), 0.0); }
 float hermite(const vec2 d)  { return smoothstep(0.0, 1.0, 1 - length(d)); }
-float fsr(const vec2 d) {
-    float x2  = min(dot(d, d), 4.0);
-    float x24 = x2 - 4.0;
-    return x24 * x24 * x24 * (x2 - 1.0);
+float quadratic(const vec2 d) {
+    float x = 1.5 * length(d);
+    if (x < 0.5)
+        return(0.75 - x * x);
+    if (x < 1.5)
+        return(0.5 * (x - 1.5) * (x - 1.5));
+    return(0.0);
 }
 
 vec2  scale = LUMA_size / CHROMA_size;
-ivec2 start = ivec2(ceil(-scale - 0.5));
-ivec2 end   = ivec2(floor(scale - 0.5));
 
 vec4 hook() {
-    vec2  d;
-    float w, wsum, ysum = 0.0;
-    for(int dx = start.x; dx <= end.x; dx++) {
-        for(int dy = start.y; dy <= end.y; dy++) {
-            d = vec2(dx, dy) + 0.5;
-            wsum += w = weight(d / scale);
-            ysum += w == 0.0 ? 0.0 : w * LUMA_texOff(d).x;
+    float dx, dy, w, wsum, ysum = 0.0;
+    for(int x = 0; x < scale.x; x++) {
+        for(int y = 0; y < scale.y; y++) {
+            dx = x + 0.5;
+            dy = y + 0.5;
+            w = weight(vec2( dx, dy) / scale);
+            if (w == 0.0) { continue; }
+            wsum += w * 4.0;
+            ysum += w * (LUMA_texOff(vec2( dx, dy)).x +
+                         LUMA_texOff(vec2(-dx, dy)).x +
+                         LUMA_texOff(vec2( dx,-dy)).x +
+                         LUMA_texOff(vec2(-dx,-dy)).x);
         }
     }
     return vec4(ysum / wsum, 0.0, 0.0, 1.0);
@@ -72,7 +77,7 @@ vec4 hook() {
 //!WIDTH LUMA.w
 //!HEIGHT LUMA.h
 //!OFFSET ALIGN
-//!DESC [CfL_Prediction_Polar] Upscaling UV FSR
+//!DESC [CfL_Prediction_Polar_nxt] Upscaling UV FSR
 
 #define USE_12_TAP_REGRESSION 1
 #define USE_8_TAP_REGRESSIONS 1
@@ -170,7 +175,7 @@ vec4 hook() {
 #endif
 
     vec2 chroma_spatial = ct / wt;
-    chroma_spatial = clamp(mix(chroma_spatial, clamp(chroma_spatial, chroma_min, chroma_max), cfl_antiring), 0.0, 1.0);
+    chroma_spatial = clamp(mix(chroma_spatial, clamp(chroma_spatial, chroma_min, chroma_max), AR), 0.0, 1.0);
 #endif
 
 #if (USE_12_TAP_REGRESSION == 1 || USE_8_TAP_REGRESSIONS == 1)
@@ -270,3 +275,4 @@ vec4 hook() {
     output_pix.xy = clamp(output_pix.xy, 0.0, 1.0);
     return output_pix;
 }
+
